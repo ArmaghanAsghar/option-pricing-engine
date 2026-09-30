@@ -1,0 +1,59 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 20, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "release",
+      "displayName": "Release (engine, CLI, API, tests)",
+      "binaryDir": "${sourceDir}/build/release",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PRICER_BUILD_TESTS": "ON",
+        "PRICER_BUILD_API": "ON",
+        "PRICER_BUILD_UI": "OFF"
+      }
+    },
+    {
+      "name": "debug",
+      "displayName": "Debug with address and undefined-behaviour sanitizers",
+      "binaryDir": "${sourceDir}/build/debug",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Debug",
+        "PRICER_BUILD_TESTS": "ON",
+        "PRICER_BUILD_API": "ON",
+        "PRICER_BUILD_UI": "OFF",
+        "CMAKE_CXX_FLAGS": "-fsanitize=address,undefined -fno-omit-frame-pointer -g",
+        "CMAKE_EXE_LINKER_FLAGS": "-fsanitize=address,undefined"
+      }
+    },
+    {
+      "name": "ui",
+      "displayName": "Release plus the Qt desktop app",
+      "binaryDir": "${sourceDir}/build/ui",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "PRICER_BUILD_TESTS": "ON",
+        "PRICER_BUILD_API": "ON",
+        "PRICER_BUILD_UI": "ON"
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "release", "configurePreset": "release" },
+    { "name": "debug", "configurePreset": "debug" },
+    { "name": "ui", "configurePreset": "ui" }
+  ],
+  "testPresets": [
+    {
+      "name": "release",
+      "configurePreset": "release",
+      "output": { "outputOnFailure": true },
+      "execution": { "jobs": 4 }
+    },
+    {
+      "name": "debug",
+      "configurePreset": "debug",
+      "output": { "outputOnFailure": true }
+    }
+  ]
+}

@@ -1,0 +1,127 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  engine:
+    name: Engine and API (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libssl-dev libsqlite3-dev
+
+      - name: Select compiler
+        run: |
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            echo "CC=clang"   >> "$GITHUB_ENV"
+            echo "CXX=clang++" >> "$GITHUB_ENV"
+          else
+            echo "CC=gcc"   >> "$GITHUB_ENV"
+            echo "CXX=g++"  >> "$GITHUB_ENV"
+          fi
+
+      - name: Configure
+        run: cmake --preset release -G Ninja
+
+      - name: Build
+        run: cmake --build --preset release
+
+      - name: Test
+        run: ctest --preset release
+
+      - name: Smoke test the CLI against a published value
+        run: |
+          # Hull's worked example: S=42, K=40, r=10%, sigma=20%, T=0.5 -> 4.76.
+          price=$(echo '{"instrument":{"type":"vanilla","option":"call","strike":40,"expiry":0.5},
+                         "market":{"spot":42,"rate":0.10,"vol":0.2}}' \
+            | ./build/release/pricer-cli price --compact \
+            | python3 -c 'import json,sys; print(json.load(sys.stdin)["price"])')
+          python3 - "$price" <<'PY'
+          import sys
+          value = float(sys.argv[1])
+          assert abs(value - 4.7594223928) < 1e-6, f"expected 4.7594, got {value}"
+          print(f"ok: {value}")
+          PY
+
+  sanitizers:
+    name: Address and undefined-behaviour sanitizers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build libssl-dev libsqlite3-dev
+      - name: Configure
+        run: cmake --preset debug -G Ninja
+      - name: Build
+        run: cmake --build --preset debug
+      - name: Test
+        run: ctest --preset debug
+
+  docker:
+    name: Docker image
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      # The image runs the test suite during its build, so this also gates on
+      # the tests passing inside the container.
+      - name: Build image
+        run: docker build -t pricer-api:ci .
+
+      - name: Start the container
+        run: |
+          docker run -d --name pricer -p 8080:8080 pricer-api:ci
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/health > /dev/null; then break; fi
+            sleep 1
+          done
+
+      - name: Exercise the API
+        run: |
+          curl -fsS http://localhost:8080/health | tee /dev/stderr | grep -q '"status":"ok"'
+          curl -fsS http://localhost:8080/engines | grep -q black_scholes
+
+          curl -fsS -X POST http://localhost:8080/price \
+            -H 'Content-Type: application/json' \
+            -d '{"instrument":{"type":"vanilla","option":"call","strike":100,"expiry":1},
+                 "market":{"spot":100,"rate":0.05,"vol":0.2}}' \
+            | tee /dev/stderr | grep -q '"engine":"black_scholes"'
+
+          # A malformed request must come back as a 400, not a crash.
+          code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://localhost:8080/price \
+            -H 'Content-Type: application/json' -d '{"instrument":{}}')
+          test "$code" = "400" || { echo "expected 400, got $code"; exit 1; }
+
+      - name: Container logs
+        if: always()
+        run: docker logs pricer
+
+      - name: Report image size
+        run: docker image inspect pricer-api:ci --format 'image size: {{.Size}} bytes'
+
+  ui:
+    name: Qt desktop app (macOS)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install Qt and dependencies
+        run: brew install qt cmake ninja
+      - name: Configure
+        run: cmake --preset ui -G Ninja -DCMAKE_PREFIX_PATH="$(brew --prefix qt)"
+      - name: Build
+        run: cmake --build --preset ui
+      # Chart rendering is not pixel tested; this job proves the UI compiles
+      # and links against the real Qt.

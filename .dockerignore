@@ -1,0 +1,8 @@
+build/
+build-*/
+ui/
+.git/
+.env
+*.db
+*.md
+.DS_Store

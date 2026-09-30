@@ -1,0 +1,29 @@
+services:
+  api:
+    build:
+      context: .
+      target: runtime
+    image: pricer-api:latest
+    container_name: pricer-api
+    ports:
+      - "${PRICER_PORT:-8080}:8080"
+    environment:
+      # Market data is optional. Without a key the pricing endpoints still work
+      # and /market/* reports that live data is unavailable.
+      FINNHUB_KEY: "${FINNHUB_KEY:-}"
+      PRICER_CACHE_PATH: /data/market.db
+      PRICER_VOL_WINDOW: "${PRICER_VOL_WINDOW:-60}"
+      PRICER_RATE_LIMIT: "${PRICER_RATE_LIMIT:-55}"
+      PRICER_QUOTE_TTL: "${PRICER_QUOTE_TTL:-60}"
+      PRICER_CHAIN_TTL: "${PRICER_CHAIN_TTL:-900}"
+    volumes:
+      - market-cache:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  market-cache:

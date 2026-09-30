@@ -1,0 +1,9 @@
+build/
+build-*/
+.env
+*.db
+*.db-wal
+*.db-shm
+.DS_Store
+.cache/
+compile_commands.json
